@@ -7,6 +7,7 @@ from gym.utils import seeding
 
 try:
     import nes_le
+    from nes_le.interface import NESLEInterface, show_image
 except ImportError as e:
     raise error.DependencyNotInstalled("{}. (HINT: you can install NES dependencies by running 'pip install gym[nes]'.)".format(e))
 
@@ -21,14 +22,11 @@ class NESEnv(gym.Env, utils.EzPickle):
         choose from, with the top value exclude), or an int."""
 
         utils.EzPickle.__init__(self, game, obs_type)
-        assert obs_type in ('ram', 'image')
+        assert obs_type in ('image')
 
-        self.game_path = nes_py.get_game_path(game)
-        if not os.path.exists(self.game_path):
-            raise IOError('You asked for game %s but path %s does not exist'%(game, self.game_path))
         self._obs_type = obs_type
         self.frameskip = frameskip
-        self.nes_le = nes_py.NESLEInterface()
+        self.nes_le = NESLEInterface(game)
         self.viewer = None
 
         # Tune (or disable) ALE's action repeat:
@@ -41,22 +39,19 @@ class NESEnv(gym.Env, utils.EzPickle):
         self._action_set = self.nes_le.getMinimalActionSet()
         self.action_space = spaces.Discrete(len(self._action_set))
 
-        (screen_width,screen_height) = self.ale.getScreenDims()
-        if self._obs_type == 'image':
-            self.observation_space = spaces.Box(low=0, high=255, shape=(screen_height, screen_width, 3))
-        else:
-            raise error.Error('Unrecognized observation type: {}'.format(self._obs_type))
+        self.observation_space = spaces.Box(low=0, high=255, shape=(screen_height, screen_width, 3))
 
     def _step(self, a):
         reward = 0.0
-        action = self._action_set[a]
 
-        if isinstance(self.frameskip, int):
-            num_steps = self.frameskip
-        else:
-            num_steps = self.np_random.randint(self.frameskip[0], self.frameskip[1])
+        # TODO: re-implement seeding and randomized actions
+        # if isinstance(self.frameskip, int):
+        #     num_steps = self.frameskip
+        # else:
+        #     num_steps = self.np_random.randint(self.frameskip[0], self.frameskip[1])
+        num_steps = 1
         for _ in range(num_steps):
-            reward += self.nes_le.act(action)
+            reward += self.nes_le.act(a)
         ob = self._get_obs()
 
         return ob, reward, self.nes_le.game_over(), {"nes_le.lives": self.nes_le.lives()}
@@ -77,19 +72,11 @@ class NESEnv(gym.Env, utils.EzPickle):
         return self._get_obs()
 
     def _render(self, mode='human', close=False):
-        if close:
-            if self.viewer is not None:
-                self.viewer.close()
-                self.viewer = None
-            return
-        img = self._get_image()
+        frame = self._get_image()
         if mode == 'rgb_array':
-            return img
+            return frame
         elif mode == 'human':
-            from gym.envs.classic_control import rendering
-            if self.viewer is None:
-                self.viewer = rendering.SimpleImageViewer()
-            self.viewer.imshow(img)
+            show_image(frame)
 
     def get_action_meanings(self):
         return [ACTION_MEANING[i] for i in self._action_set]
@@ -124,40 +111,11 @@ class NESEnv(gym.Env, utils.EzPickle):
     #    self.ale.restoreSystemState(state_ref)
     #    self.ale.deleteState(state_ref)
 
-ACTION_MEANING = {
-    0 : "NOOP",
-    1 : "UP",
-    2 : "RIGHT",
-    3 : "LEFT",
-    4 : "DOWN",
-    5 : "UPRIGHT",
-    6 : "UPLEFT",
-    7 : "DOWNRIGHT",
-    8 : "DOWNLEFT",
-    9 : "A",
-    10 : "B",
-    11 : "UPA",
-    12 : "RIGHTA",
-    13 : "LEFTA",
-    14 : "DOWNA",
-    15 : "UPRIGHTA",
-    16 : "UPLEFTA",
-    17 : "DOWNRIGHTA",
-    18 : "DOWNLEFTA",
-    19 : "UPB",
-    20 : "RIGHTB",
-    21 : "LEFTB",
-    22 : "DOWNB",
-    23 : "UPRIGHTB",
-    24 : "UPLEFTB",
-    25 : "DOWNRIGHTB",
-    26 : "DOWNLEFTB",
-    27 : "UPB",
-    28 : "RIGHTB",
-    29 : "LEFTB",
-    31 : "DOWNAB",
-    32 : "UPRIGHTAB",
-    33 : "UPLEFTAB",
-    34 : "DOWNRIGHTAB",
-    35 : "DOWNLEFTAB",
-}
+print(dir(nes_le.interface))
+ACTION_MEANING = {key: value[0] for key, value in nes_le.interface.NESLEInterface.actions.items()}
+
+if __name__ == "__main__":
+    n = NESEnv()
+    while True:
+        n._step(0)
+        show_image(n._render(mode='rgb_array'))
